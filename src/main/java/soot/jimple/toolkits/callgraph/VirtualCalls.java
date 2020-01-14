@@ -23,6 +23,8 @@ package soot.jimple.toolkits.callgraph;
  */
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -106,19 +108,67 @@ public class VirtualCalls {
       return null;
     }
 
-    SootMethod m = cls.getMethodUnsafe(subSig);
-    if (m != null) {
-      if (!m.isAbstract()) {
-        ret = m;
-      }
-    } else {
-      SootClass c = cls.getSuperclassUnsafe();
-      if (c != null) {
-        ret = resolveNonSpecial(c.getType(), subSig);
-      }
-    }
+    ret = resolveNonSpecialInternal(cls, subSig);
+
     vtbl.put(subSig, ret);
     return ret;
+  }
+
+  /**
+   * Resolves a virtual/interface method taking default methods into account.
+   *
+   * @param cls     The class on which the method is called.
+   * @param subSig  Sub signature of the method.
+   * @return        The resolved method. {@code null} if no such method exists.
+   */
+  private SootMethod resolveNonSpecialInternal(SootClass cls, NumberedString subSig) {
+
+    // look for a suitable method in the type directly and in its super types
+    SootClass currentClass = cls;
+    do {
+      SootMethod method = currentClass.getMethodUnsafe(subSig);
+      if (method != null) {
+        if (method.isAbstract()) {
+          return null;
+        } else {
+          return method;
+        }
+      }
+    } while ((currentClass = currentClass.getSuperclassUnsafe()) != null);
+
+    // collect interfaces and sort them according to their inheritance distance
+    HashMap<SootClass,Integer> inheritanceDistance = new HashMap<>();
+    currentClass = cls;
+    do {
+      collectInterfaces(currentClass, inheritanceDistance, 0);
+    } while ((currentClass = currentClass.getSuperclassUnsafe()) != null);
+    ArrayList<SootClass> interfaces = new ArrayList<>(inheritanceDistance.keySet());
+    interfaces.sort(Comparator.comparingInt(inheritanceDistance::get));
+
+    // find first default method
+    for (SootClass interf : interfaces) {
+      SootMethod method = interf.getMethodUnsafe(subSig);
+      if (method != null && !method.isAbstract() && !method.isPrivate()) {
+        return method;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Collects all interfaces which are directly or indirectly implemented by the given class.
+   * Additionally, stores the max inheritance distance between the given class and each interface.
+   *
+   * @param cls                  The class to collect the interfaces for.
+   * @param inheritanceDistance  The map which receives the interfaces together with the max inheritance distance.
+   * @param distance             The current distance from the class of interest.
+   */
+  private void collectInterfaces(SootClass cls, HashMap<SootClass,Integer> inheritanceDistance, int distance) {
+    for (SootClass interf : cls.getInterfaces()) {
+      inheritanceDistance.merge(interf, distance, Integer::max);
+      collectInterfaces(interf, inheritanceDistance, distance + 1);
+    }
   }
 
   protected MultiMap<Type, Type> baseToSubTypes = new HashMultiMap<Type, Type>();
