@@ -177,7 +177,15 @@ public final class MethodPAG {
       return;
     }
     hasBeenBuilt = true;
-    if (method.isNative()) {
+    if (method.getSignature().equals(
+            "<de.amidar.AmidarSystem: de.amidar.AmidarPeripheral GetPeripheral(java.lang.Class,int)>")) {
+      ValNode retNode = (ValNode) nodeFactory.caseRet();
+      SootClass peripheralInterface = Scene.v().getSootClass("de.amidar.AmidarPeripheral");
+      for (SootClass cls : Scene.v().getFastHierarchy().getAllImplementersOfInterface(peripheralInterface)) {
+        AllocNode site = pag.makeAllocNode(cls, cls.getType(), null);
+        pag.addEdge(site, retNode);
+      }
+    } else if (method.isNative()) {
       if (pag().getOpts().simulate_natives()) {
         buildNative();
       }
