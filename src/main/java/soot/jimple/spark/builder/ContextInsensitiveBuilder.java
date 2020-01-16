@@ -24,6 +24,7 @@ package soot.jimple.spark.builder;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,7 @@ import soot.jimple.spark.geom.geomPA.GeomPointsTo;
 import soot.jimple.spark.internal.SparkNativeHelper;
 import soot.jimple.spark.pag.MethodPAG;
 import soot.jimple.spark.pag.PAG;
+import soot.jimple.spark.pag.SpecialMethodHandler;
 import soot.jimple.spark.solver.OnFlyCallGraph;
 import soot.jimple.toolkits.callgraph.CallGraphBuilder;
 import soot.jimple.toolkits.callgraph.Edge;
@@ -78,7 +80,7 @@ public class ContextInsensitiveBuilder {
   }
 
   /** Creates an empty pointer assignment graph. */
-  public PAG setup(SparkOptions opts) {
+  public PAG setup(SparkOptions opts, Map<String, SpecialMethodHandler> specialMethodHandlers) {
     pag = opts.geom_pta() ? new GeomPointsTo(opts) : new PAG(opts);
     if (opts.simulate_natives()) {
       pag.nativeMethodDriver = new NativeMethodDriver(new SparkNativeHelper(pag));
@@ -89,6 +91,7 @@ public class ContextInsensitiveBuilder {
     } else {
       cgb = new CallGraphBuilder(DumbPointerAnalysis.v());
     }
+    pag.setSpecialMethodHandlers(specialMethodHandlers);
     return pag;
   }
 

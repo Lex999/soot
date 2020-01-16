@@ -23,6 +23,7 @@ package soot.jimple.spark;
  */
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -52,6 +53,7 @@ import soot.jimple.spark.pag.Node;
 import soot.jimple.spark.pag.PAG;
 import soot.jimple.spark.pag.PAG2HTML;
 import soot.jimple.spark.pag.PAGDumper;
+import soot.jimple.spark.pag.SpecialMethodHandler;
 import soot.jimple.spark.pag.VarNode;
 import soot.jimple.spark.sets.P2SetVisitor;
 import soot.jimple.spark.sets.PointsToSetInternal;
@@ -77,11 +79,26 @@ import soot.tagkit.Tag;
 public class SparkTransformer extends SceneTransformer {
   private static final Logger logger = LoggerFactory.getLogger(SparkTransformer.class);
 
+  /**
+   * Contains for method signatures corresponding handlers which handle
+   * PAG generation for these methods in a special way.
+   */
+  private Map<String, SpecialMethodHandler> specialMethodHandlers = new HashMap<>();
+
   public SparkTransformer(Singletons.Global g) {
   }
 
   public static SparkTransformer v() {
     return G.v().soot_jimple_spark_SparkTransformer();
+  }
+
+  /**
+   * Adds a special method handler to the transformer.
+   *
+   * @param handler  Handler for a method which must be treated specially during PAG creation.
+   */
+  public void addSpecialMethodHandler(String signature, SpecialMethodHandler handler) {
+    specialMethodHandlers.put(signature, handler);
   }
 
   protected void internalTransform(String phaseName, Map<String, String> options) {
@@ -97,7 +114,7 @@ public class SparkTransformer extends SceneTransformer {
       doGC();
     }
     Date startBuild = new Date();
-    final PAG pag = b.setup(opts);
+    final PAG pag = b.setup(opts, specialMethodHandlers);
     b.build();
     Date endBuild = new Date();
     reportTime("Pointer Assignment Graph", startBuild, endBuild);

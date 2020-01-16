@@ -1048,6 +1048,29 @@ public class PAG implements PointsToAnalysis {
     return cgOpts;
   }
 
+  /**
+   * Gets a special method handler for the given method signature.
+   *
+   * @param signature  The method signature.
+   * @return           The corresponding special method handler.
+   *                   {@code null} if no such handler is available.
+   */
+  public SpecialMethodHandler getSpecialMethodHandler(String signature) {
+    if (specialMethodHandlers == null) {
+      return null;
+    } else {
+      return specialMethodHandlers.get(signature);
+    }
+  }
+
+  /**
+   * @param specialMethodHandlers  Contains for method signatures corresponding handlers which handle
+   *                               PAG generation for these methods in a special way.
+   */
+  public void setSpecialMethodHandlers(Map<String, SpecialMethodHandler> specialMethodHandlers) {
+    this.specialMethodHandlers = specialMethodHandlers;
+  }
+
   // Must be simple edges
   public Pair<Node, Node> addInterproceduralAssignment(Node from, Node to, Edge e) {
     Pair<Node, Node> val = new Pair<Node, Node>(from, to);
@@ -1482,5 +1505,11 @@ public class PAG implements PointsToAnalysis {
   public HashMultiMap<InvokeExpr, Pair<Node, Node>> callAssigns = new HashMultiMap<InvokeExpr, Pair<Node, Node>>();
   public Map<InvokeExpr, SootMethod> callToMethod = new HashMap<InvokeExpr, SootMethod>();
   public Map<InvokeExpr, Node> virtualCallsToReceivers = new HashMap<InvokeExpr, Node>();
+
+  /**
+   * Contains for method signatures corresponding handlers which handle
+   * PAG generation for these methods in a special way.
+   */
+  private Map<String, SpecialMethodHandler> specialMethodHandlers;
 
 }
