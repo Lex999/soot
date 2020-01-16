@@ -5,7 +5,7 @@
     <groupId>ca.mcgill.sable</groupId>
     <artifactId>soot</artifactId>
     <name>Soot - a J*va Optimization Framework</name>
-    <version>4.0.0-AMIDAR</version>
+    <version>4.0.0-AMIDAR2</version>
     <description>A Java Optimization Framework</description>
     <url>https://sable.github.io/soot/</url>
     <organization>
@@ -399,6 +399,14 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
                 <version>${maven-source-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -562,9 +570,15 @@
         </repository>
     </repositories>
     <distributionManagement>
+        <repository>
+            <id>release</id>
+            <name>releases</name>
+            <url>https://www.rs.e-technik.tu-darmstadt.de/artifactory/gradle-release-local</url>
+        </repository>
         <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <id>dev</id>
+            <name>dev</name>
+            <url>https://www.rs.e-technik.tu-darmstadt.de/artifactory/gradle-dev-local</url>
         </snapshotRepository>
     </distributionManagement>
     <profiles>
