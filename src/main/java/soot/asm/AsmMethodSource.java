@@ -310,9 +310,14 @@ final class AsmMethodSource implements MethodSource {
   private final Set<LabelNode> inlineExceptionLabels = new HashSet<LabelNode>();
   private final Map<LabelNode, Unit> inlineExceptionHandlers = new HashMap<LabelNode, Unit>();
   private final CastAndReturnInliner castAndReturnInliner = new CastAndReturnInliner();
+  /** Stores for each instruction node its position to speed up comparison. */
+  private final Map<AbstractInsnNode, Integer> nodePosition;
+
   /* -state fields- */
-  private int nextLocal;
-  private Map<Integer, Local> locals;
+  /** Contains locals which model data transfer via stack. */
+  private List<Local> stackLocals;
+  /** Stores for each local variable index the locals together with their scope. */
+  private Map<Integer, List<LocalWithLimits>> localByIndex;
   private Multimap<LabelNode, UnitBox> labels;
   private Map<AbstractInsnNode, Unit> units;
   private ArrayList<Operand> stack;
@@ -330,6 +335,16 @@ final class AsmMethodSource implements MethodSource {
     this.localVars = localVars;
     this.tryCatchBlocks = tryCatchBlocks;
     this.module = module;
+
+    // Initialize map with node positions in order to speed up position comparison.
+    HashMap<AbstractInsnNode,Integer> nodePosition = new HashMap<>();
+    AbstractInsnNode insn = insns.getFirst();
+    int count = 0;
+    while (insn != null) {
+      nodePosition.put(insn, count++);
+      insn = insn.getNext();
+    }
+    this.nodePosition = nodePosition;
   }
 
   private StackFrame getFrame(AbstractInsnNode insn) {
@@ -349,33 +364,73 @@ final class AsmMethodSource implements MethodSource {
     return Scene.v().getSootClass(className);
   }
 
-  private Local getLocal(int idx) {
+  /**
+   * Creates locals from local variable nodes.
+   */
+  private void prepareLocals() {
+    if (localVars != null) {
+      for (LocalVariableNode localVar : localVars) {
+        List<LocalWithLimits> localList = localByIndex.computeIfAbsent(
+                localVar.index, key -> new ArrayList<>(5));
+
+        // get start and end positions
+        int start = nodePosition.get(localVar.start);
+        if (start > 0) {
+          start--; // local is written at the node before this label
+        }
+        int end = nodePosition.get(localVar.end);
+
+        // check if there is another local with the same name at this index
+        LocalWithLimits l = null;
+        for (LocalWithLimits otherLocal : localList) {
+          if (otherLocal.local.getName().equals(localVar.name)) {
+            // copy local to new scope
+            l = new LocalWithLimits(otherLocal.local, start, end);
+            break;
+          }
+        }
+
+        if (l == null) {
+          l = new LocalWithLimits(Jimple.v().newLocal(localVar.name, UnknownType.v()), start, end);
+        }
+
+        localList.add(l);
+      }
+    }
+  }
+
+  /**
+   * Gets a local for the given local variable index.
+   *
+   * @param idx          The local variable index.
+   * @param currentNode  The instruction node which indicates the current position in the code.
+   * @return             The local.
+   */
+  private Local getLocal(int idx, AbstractInsnNode currentNode) {
     if (idx >= maxLocals) {
       throw new IllegalArgumentException("Invalid local index: " + idx);
     }
     Integer i = idx;
-    Local l = locals.get(i);
-    if (l == null) {
-      String name;
-      if (localVars != null) {
-        name = null;
-        for (LocalVariableNode lvn : localVars) {
-          if (lvn.index == idx) {
-            name = lvn.name;
-            break;
-          }
-        }
-        /* normally for try-catch blocks */
-        if (name == null) {
-          name = "l" + idx;
-        }
-      } else {
-        name = "l" + idx;
+    int currentPosition = nodePosition.get(currentNode);
+
+    // try to find an existing local for this index and position
+    List<LocalWithLimits> locals = localByIndex.computeIfAbsent(i, key -> new ArrayList<>(1));
+    LocalWithLimits l = null;
+    for (LocalWithLimits local : locals) {
+      if (local.start <= currentPosition && currentPosition < local.end) {
+        l = local;
+        break;
       }
-      l = Jimple.v().newLocal(name, UnknownType.v());
-      locals.put(i, l);
     }
-    return l;
+
+    // a new local spanning the whole method must be created
+    if (l == null) {
+      String name = "l" + idx;
+      l = new LocalWithLimits(Jimple.v().newLocal(name, UnknownType.v()), 0, instructions.size());
+      locals.add(l);
+    }
+
+    return l.local;
   }
 
   private void push(Operand opr) {
@@ -516,9 +571,8 @@ final class AsmMethodSource implements MethodSource {
   }
 
   Local newStackLocal() {
-    Integer idx = nextLocal++;
-    Local l = Jimple.v().newLocal("$stack" + idx, UnknownType.v());
-    locals.put(idx, l);
+    Local l = Jimple.v().newLocal("$stack" + stackLocals.size(), UnknownType.v());
+    stackLocals.add(l);
     return l;
   }
 
@@ -658,7 +712,7 @@ final class AsmMethodSource implements MethodSource {
   }
 
   private void convertIincInsn(IincInsnNode insn) {
-    Local local = getLocal(insn.var);
+    Local local = getLocal(insn.var, insn);
     assignReadOps(local);
     if (!units.containsKey(insn)) {
       AddExpr add = Jimple.v().newAddExpr(local, IntConstant.v(insn.incr));
@@ -1630,7 +1684,7 @@ final class AsmMethodSource implements MethodSource {
     Operand[] out = frame.out();
     Operand opr;
     if (out == null) {
-      opr = new Operand(insn, getLocal(insn.var));
+      opr = new Operand(insn, getLocal(insn.var, insn));
       frame.out(opr);
     } else {
       opr = out[0];
@@ -1647,7 +1701,7 @@ final class AsmMethodSource implements MethodSource {
     boolean dword = op == LSTORE || op == DSTORE;
     StackFrame frame = getFrame(insn);
     Operand opr = dword ? popDual() : pop();
-    Local local = getLocal(insn.var);
+    Local local = getLocal(insn.var, insn);
     if (!units.containsKey(insn)) {
       DefinitionStmt as = Jimple.v().newAssignStmt(local, opr.stackOrValue());
       opr.addBox(as.getRightOpBox());
@@ -1669,7 +1723,7 @@ final class AsmMethodSource implements MethodSource {
     } else if (op == RET) {
       /* we handle it, even thought it should be removed */
       if (!units.containsKey(insn)) {
-        setUnit(insn, Jimple.v().newRetStmt(getLocal(insn.var)));
+        setUnit(insn, Jimple.v().newRetStmt(getLocal(insn.var, insn)));
       }
     } else {
       throw new AssertionError("Unknown var op: " + op);
@@ -1892,13 +1946,13 @@ final class AsmMethodSource implements MethodSource {
     Collection<Unit> jbu = jb.getUnits();
     int iloc = 0;
     if (!m.isStatic()) {
-      Local l = getLocal(iloc++);
+      Local l = getLocal(iloc++, instructions.getFirst());
       jbu.add(Jimple.v().newIdentityStmt(l, Jimple.v().newThisRef(m.getDeclaringClass().getType())));
     }
     int nrp = 0;
     for (Object ot : m.getParameterTypes()) {
       Type t = (Type) ot;
-      Local l = getLocal(iloc);
+      Local l = getLocal(iloc, instructions.getFirst());
       jbu.add(Jimple.v().newIdentityStmt(l, Jimple.v().newParameterRef(t, nrp++)));
       if (AsmUtil.isDWord(t)) {
         iloc += 2;
@@ -1906,9 +1960,14 @@ final class AsmMethodSource implements MethodSource {
         iloc++;
       }
     }
-    for (Local l : locals.values()) {
-      jbl.add(l);
+    for (List<LocalWithLimits> locals : localByIndex.values()) {
+      for (LocalWithLimits local : locals) {
+        if (!jbl.contains(local.local)) {
+          jbl.add(local.local);
+        }
+      }
     }
+    jbl.addAll(stackLocals);
   }
 
   private void emitTraps() {
@@ -2044,8 +2103,8 @@ final class AsmMethodSource implements MethodSource {
     JimpleBody jb = Jimple.v().newBody(m);
     /* initialize */
     int nrInsn = instructions.size();
-    nextLocal = maxLocals;
-    locals = new HashMap<Integer, Local>(maxLocals + (maxLocals / 2));
+    stackLocals = new ArrayList<>();
+    localByIndex = new HashMap<>(maxLocals);
     labels = ArrayListMultimap.create(4, 1);
     units = new HashMap<AbstractInsnNode, Unit>(nrInsn);
     frames = new HashMap<AbstractInsnNode, StackFrame>(nrInsn);
@@ -2055,6 +2114,8 @@ final class AsmMethodSource implements MethodSource {
     for (TryCatchBlockNode tc : tryCatchBlocks) {
       trapHandlers.put(tc.handler, Jimple.v().newStmtBox(null));
     }
+    // prepare locals
+    prepareLocals();
     /* convert instructions */
     try {
       convert();
@@ -2068,7 +2129,8 @@ final class AsmMethodSource implements MethodSource {
     emitUnits();
 
     /* clean up */
-    locals = null;
+    stackLocals = null;
+    localByIndex = null;
     labels = null;
     units = null;
     stack = null;
@@ -2109,6 +2171,41 @@ final class AsmMethodSource implements MethodSource {
 
     Edge(AbstractInsnNode insn) {
       this(insn, new ArrayList<Operand>(AsmMethodSource.this.stack));
+    }
+  }
+
+  /**
+   * Contains a local together with node indices which
+   * indicate start and end of the scope of the local.
+   */
+  private final static class LocalWithLimits {
+
+    /**
+     * The local.
+     */
+    Local local;
+
+    /**
+     * The start of the local (inclusive).
+     */
+    int start;
+
+    /**
+     * The end of the local (exclusive).
+     */
+    int end;
+
+    /**
+     * Creates a new local with end of scope.
+     *
+     * @param local    The local.
+     * @param start    The start of the local (inclusive).
+     * @param end      The end of the local (exclusive).
+     */
+    public LocalWithLimits(Local local, int start, int end) {
+      this.local = local;
+      this.start = start;
+      this.end = end;
     }
   }
 }
