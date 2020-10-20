@@ -211,9 +211,10 @@ public class SPatchingChain extends UnitPatchingChain {
     super.addLast(u);
   }
 
-  public boolean remove(Unit obj) {
-    if (contains(obj)) {
-      Shimple.redirectToPreds(body, obj);
+  @Override
+  public boolean remove(Object obj) {
+    if (obj instanceof Unit && contains(obj)) {
+      Shimple.redirectToPreds(body, (Unit)obj);
     }
 
     return super.remove(obj);
