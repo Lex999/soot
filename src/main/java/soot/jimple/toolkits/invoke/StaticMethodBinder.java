@@ -183,7 +183,6 @@ public class StaticMethodBinder extends SceneTransformer {
                 while (edges.hasNext()) {
                   Edge e = (Edge) edges.next();
                   cg.addEdge(new Edge(ct, newStmt, e.tgt(), e.kind()));
-                  cg.removeEdge(e);
                 }
               }
             }
@@ -254,6 +253,8 @@ public class StaticMethodBinder extends SceneTransformer {
             ValueBox ieBox = s.getInvokeExprBox();
             ieBox.setValue(sie);
 
+            Iterator<Edge> it = instanceInvokesFilter.wrap(cg.edgesOutOf(s));
+            cg.removeEdge(it.next());
             cg.addEdge(new Edge(container, s, clonedTarget));
           }
 
