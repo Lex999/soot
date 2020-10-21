@@ -58,6 +58,10 @@ import soot.jimple.ReturnStmt;
 import soot.jimple.ReturnVoidStmt;
 import soot.jimple.Stmt;
 import soot.jimple.ThisRef;
+import soot.jimple.toolkits.callgraph.CallGraph;
+import soot.jimple.toolkits.callgraph.Edge;
+import soot.jimple.toolkits.callgraph.ExplicitEdgesPred;
+import soot.jimple.toolkits.callgraph.Filter;
 import soot.jimple.toolkits.scalar.LocalNameStandardizer;
 import soot.util.Chain;
 
@@ -322,6 +326,26 @@ public class SiteInliner {
           patchReturn(containerUnits, exitPoint, s);
         } else if (s instanceof ReturnVoidStmt) {
           patchReturn(containerUnits, exitPoint, s);
+        }
+      }
+    }
+
+    // update the call graph
+    if (Scene.v().hasCallGraph()) {
+      Filter explicitInvokesFilter = new Filter(new ExplicitEdgesPred());
+      CallGraph cg = Scene.v().getCallGraph();
+
+      // remove call graph edge from container to inlinee
+      Iterator<Edge> it = explicitInvokesFilter.wrap(cg.edgesOutOf(toInline));
+      cg.removeEdge(it.next());
+
+      // copy call graph edges coming out of inlinee
+      for (Unit oldUnit : inlineeUnits) {
+        Unit newUnit = oldUnitsToNew.get(oldUnit);
+        Iterator<Edge> edges = cg.edgesOutOf(oldUnit);
+        while (edges.hasNext()) {
+          Edge e = edges.next();
+          cg.addEdge(new Edge(container, newUnit, e.tgt(), e.kind()));
         }
       }
     }
