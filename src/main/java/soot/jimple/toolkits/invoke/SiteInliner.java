@@ -308,7 +308,7 @@ public class SiteInliner {
         } else if (s instanceof ReturnStmt) {
           if (toInline instanceof InvokeStmt) {
             // munch, munch.
-            containerUnits.swapWith(s, Jimple.v().newGotoStmt(exitPoint));
+            patchReturn(containerUnits, exitPoint, s);
             continue;
           }
 
@@ -319,9 +319,9 @@ public class SiteInliner {
           Value lhs = ((AssignStmt) toInline).getLeftOp();
           AssignStmt as = Jimple.v().newAssignStmt(lhs, ro);
           containerUnits.insertBefore(as, s);
-          containerUnits.swapWith(s, Jimple.v().newGotoStmt(exitPoint));
+          patchReturn(containerUnits, exitPoint, s);
         } else if (s instanceof ReturnVoidStmt) {
-          containerUnits.swapWith(s, Jimple.v().newGotoStmt(exitPoint));
+          patchReturn(containerUnits, exitPoint, s);
         }
       }
     }
@@ -339,5 +339,20 @@ public class SiteInliner {
     LocalNameStandardizer.v().transform(containerB, "ji.lns");
 
     return newStmts;
+  }
+
+  /**
+   * Patches the return statement.
+   *
+   * @param units       The unit chain to work on.
+   * @param exitPoint   The point to jump to instead of returning.
+   * @param returnStmt  The return statement to patch.
+   */
+  private static void patchReturn(Chain<Unit> units, Stmt exitPoint, Stmt returnStmt) {
+    if (units.getSuccOf(returnStmt) == exitPoint) {
+      units.remove(returnStmt);
+    } else {
+      units.swapWith(returnStmt, Jimple.v().newGotoStmt(exitPoint));
+    }
   }
 }
